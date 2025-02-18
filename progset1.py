@@ -12,7 +12,7 @@ class dHeap:
         return (i - 1) // self.d
     
     def children(self, i):
-        return range(self.d)+1 + (i * self.d)
+        return range(1+(i * self.d), 1+(i * self.d)+self.d)
     
     # verifies upwards from i
     def verify_up(self, i):
@@ -29,9 +29,11 @@ class dHeap:
         min = self.heap[i][0]
         minIdx = i
         for idx in ci:
-            if self.heap[idx] < min:
+            if idx >= len(self.heap):
+                break
+            if self.heap[idx][0] < min:
                 minIdx = idx
-                min = self.heap[idx]
+                min = self.heap[idx][0]
                 swap = True
         if swap:
             self.heap[i], self.heap[minIdx] = self.heap[minIdx], self.heap[i]
@@ -46,8 +48,9 @@ class dHeap:
     def pop(self):
         if not self.heap:
             raise IndexError("trying to pop from an empty heap")
-        out = self.heap[0].copy()
+        out = self.heap[0]
         self.heap[0] = self.heap.pop(-1)
+        print(self.heap)
         self.verify_down(0)
         return out
 
