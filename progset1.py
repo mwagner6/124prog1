@@ -9,16 +9,47 @@ class dHeap:
         self.heap = []
 
     def parent(self, i):
-        return i // self.d
+        return (i - 1) // self.d
+    
+    def children(self, i):
+        return range(self.d)+1 + (i * self.d)
+    
+    # verifies upwards from i
+    def verify_up(self, i):
+        if i == 0:
+            return
+        p = self.parent(i)
+        if self.heap[i][0] < self.heap[p][0]:
+            self.heap[i], self.heap[p] = self.heap[p], self.heap[i]
+            self.verify_up(p)
+    
+    def verify_down(self, i):
+        ci = self.children(i)
+        swap = False
+        min = self.heap[i][0]
+        minIdx = i
+        for idx in ci:
+            if self.heap[idx] < min:
+                minIdx = idx
+                min = self.heap[idx]
+                swap = True
+        if swap:
+            self.heap[i], self.heap[minIdx] = self.heap[minIdx], self.heap[i]
+            self.verify_down(minIdx)
+
 
     def push(self, item):
         self.heap.append(item)
-        self.
+        self.verify_up(len(self.heap)-1)
+
 
     def pop(self):
-        if not self.tree:
+        if not self.heap:
             raise IndexError("trying to pop from an empty heap")
-        return self.tree.pop[0]
+        out = self.heap[0].copy()
+        self.heap[0] = self.heap.pop(-1)
+        self.verify_down(0)
+        return out
 
 
 class Graph:
