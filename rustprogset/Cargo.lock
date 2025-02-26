@@ -97,7 +97,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustprogset"
+name = "randmst"
 version = "0.1.0"
 dependencies = [
  "rand",
