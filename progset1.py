@@ -1,6 +1,7 @@
 import sys
 import math
 import random
+import time
 
 # We'll use the d-heap outlined in lecture 6 for Prim's
 class dHeap:
@@ -46,19 +47,21 @@ class dHeap:
 
 
     def pop(self):
-        if not self.heap:
+        if not self.heap or len(self.heap) < 1:
             raise IndexError("trying to pop from an empty heap")
         out = self.heap[0]
-        self.heap[0] = self.heap.pop(-1)
-        print(self.heap)
-        self.verify_down(0)
+        if len(self.heap) > 1:
+            self.heap[0] = self.heap.pop(-1)
+            self.verify_down(0)
+        else:
+            self.heap.pop()
         return out
 
 
 class Graph:
     def __init__(self, n):
         self.n = n
-        self.adj = {i: [] for in range(n)}
+        self.adj = {i: [] for i in range(n)}
 
     def add_edge(self, u, v, weight):
         self.adj[u].append((v, weight))
@@ -92,39 +95,43 @@ def MST_prim(graph, d=2):
     heap = dHeap(d)
     heap.push((0, s))
 
-    while heap:
+    while heap and len(heap.heap) > 0:
         key, u = heap.pop()
         if visited[u]:
             continue
         visited[u] = True
-
-    for (v, weight) in graph.neigbors(u):
-        if not visited[u] and d_val[v] > weight:
-            d_val[v] = weight
-            prev[v] = u
-            heap.push((weight, v))
+        for (v, weight) in graph.neighbors(u):
+            if (not visited[v]) and d_val[v] > weight:
+                d_val[v] = weight
+                prev[v] = u
+                heap.push((weight, v))
 
     total_weight = sum(d_val)
-    return total_weight, d_val, prev # make it return total_weight as well for the progset purposes
+    return total_weight # make it return total_weight as well for the progset purposes
 
 
-    def complete_basic(n):
-        pass
+def complete_basic(n):
+    g = Graph(n)
+    for u in range(n-1):
+        for v in range(u+1, n):
+            g.add_edge(u, v, random.random())
+    return g
 
-    def hypercube(n):
-        pass
+def hypercube(n):
+    pass
 
-    def complete_unit_square(n):
-        pass
+def complete_unit_square(n):
+    pass
 
-    def complete_unit_cube(n):
-        pass
+def complete_unit_cube(n):
+    pass
 
-    def complete_hypercube(n):
-        pass
+def complete_hypercube(n):
+    pass
 
 
 def main():
+    start = time.time()
     arg0 = int(sys.argv[1])
     numpoints = int(sys.argv[2])
     numtrials = int(sys.argv[3])
@@ -135,6 +142,15 @@ def main():
     print("Number of points:", numpoints)
     print("Number of trials:", numtrials)
     print("Dimension:", dimension)
+
+    func = {0: complete_basic, 1: hypercube, 2: complete_unit_square, 3: complete_unit_cube, 4: complete_hypercube}
+    avgweight = 0
+    for i in range(numtrials):
+        g = func[dimension](numpoints)
+        avgweight += MST_prim(g)
+    avgweight /= numtrials
+    print(f"{avgweight} {numpoints} {numtrials} {dimension}")
+    print(f"Time elapsed: {time.time() - start}")
 
 if __name__ == "__main__":
     main()
