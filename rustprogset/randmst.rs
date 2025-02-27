@@ -92,40 +92,64 @@ impl Graph {
     }
 }
 
-fn mst_prim(g: Graph) -> f64 {
+fn mst_prim(g: &Graph) -> (f64, f64, Vec<(usize, usize, f64)>) {
     let n = g.n;
     let mut visited = vec![false; n];
     let mut dists = vec![f64::INFINITY; n];
+    let mut parent = vec![None; n]; // Track where each node was reached from
+    let mut edges = Vec::with_capacity(n - 1);
+
+    let mut max_edge_weight = 0.0;
+    let mut total_weight = 0.0;
 
     let s = 0;
     dists[s] = 0.0;
-    let mut heap = BinHeap{heap: vec![]};
+    let mut heap = BinHeap { heap: vec![] };
     heap.push((0.0, s));
-    
 
-    while heap.heap.len() > 0 {
+    while !heap.heap.is_empty() {
         let (_key, u) = heap.pop();
-        if visited[u]{
+        if visited[u] {
             continue;
         }
         visited[u] = true;
+
+        // If u has a parent, add the edge to the MST
+        if let Some(p) = parent[u] {
+            let weight = dists[u];
+            edges.push((p, u, weight));
+            total_weight += weight;
+            if weight > max_edge_weight {
+                max_edge_weight = weight;
+            }
+        }
+
         for (v, weight) in g.neighbors(u) {
-            if (!visited[v]) && dists[v] > weight {
+            if !visited[v] && dists[v] > weight {
                 dists[v] = weight;
-                heap.push((weight, v))
+                parent[v] = Some(u); // Track parent of v
+                heap.push((weight, v));
             }
         }
     }
-    return dists.iter().sum()
+
+    (total_weight, max_edge_weight, edges)
 }
 
+// Generate complete basic graph of random weights. Empirically,
+// I fitted a curve over many trials to the maximum weight edge used.
+// This fit the form k(n)=14,73/n. Conservatively, we can apply 
+// double this, dropping out above 30/n.
 fn complete_basic(n: usize) -> Graph {
     let mut rng = rand::rng();
     let range = Uniform::new(0.0_f64, 1.0_f64).unwrap();
     let mut g = Graph::new(n);
     for u in 0..n-1 {
         for v in u+1..n {
-            g.add_edge(u, v, range.sample(&mut rng));
+            let rand = range.sample(&mut rng);
+            if rand < 30.0 / n as f64 {
+                g.add_edge(u, v, rand);
+            }
         }
     }
     return g;
@@ -145,7 +169,10 @@ fn hypercube(n: usize) -> Graph {
     return g;
 }
 
+// Fitted to 5.82*(n^-0.6)
+// We can bound at 10 * (n^-0.6)
 fn complete_unit_square(n: usize) -> Graph {
+    let dropoutbound: f64 = 10.0 * (n as f64).powf(-0.6);
     let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64)> = (0..n).map(
@@ -154,16 +181,19 @@ fn complete_unit_square(n: usize) -> Graph {
         ).collect();
     for u in 0..n-1 {
         for v in u+1..n {
-            g.add_edge(u, v, 
-                ((locs[u].0-locs[v].0).powi(2)+
-                        (locs[u].1-locs[v].1).powi(2)).sqrt()
-            );
+            let w = ((locs[u].0-locs[v].0).powi(2)+
+            (locs[u].1-locs[v].1).powi(2)).sqrt();
+            if w < dropoutbound {
+                g.add_edge(u, v, w);
+            }
         }
     }
     return g;
 }
-
+// Fitted to 3.71 * (n^-0.42)
+// We can bound to 8 * (n^-0.42)
 fn complete_unit_cube(n: usize) -> Graph {
+    let dropoutbound: f64 = 8.0 * (n as f64).powf(-0.42);
     let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64, f64)> = (0..n).map(
@@ -173,17 +203,21 @@ fn complete_unit_cube(n: usize) -> Graph {
         ).collect();
     for u in 0..n-1 {
         for v in u+1..n {
-            g.add_edge(u, v, 
-                ((locs[u].0-locs[v].0).powi(2)+
-                        (locs[u].1-locs[v].1).powi(2)+
-                        (locs[u].2-locs[v].2).powi(2)).sqrt()
-            );
+            let w = ((locs[u].0-locs[v].0).powi(2)+
+            (locs[u].1-locs[v].1).powi(2)+
+            (locs[u].2-locs[v].2).powi(2)).sqrt();
+            if w < dropoutbound {
+                g.add_edge(u, v, w);
+            }
         }
     }
     return g;
 }
 
+//Fit to 2.5 * (n^-0.28)
+// We can bound to 5.0 * (n^-0.28)
 fn complete_unit_hypercube(n: usize) -> Graph {
+    let dropoutbound: f64 = 5.0 * (n as f64).powf(-0.28);
     let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64, f64, f64)> = (0..n).map(
@@ -194,12 +228,13 @@ fn complete_unit_hypercube(n: usize) -> Graph {
         ).collect();
     for u in 0..n-1 {
         for v in u+1..n {
-            g.add_edge(u, v, 
-                ((locs[u].0-locs[v].0).powi(2)+
-                        (locs[u].1-locs[v].1).powi(2)+
-                        (locs[u].2-locs[v].2).powi(2)+
-                        (locs[u].3-locs[v].3).powi(2)).sqrt()
-            );
+            let w = ((locs[u].0-locs[v].0).powi(2)+
+            (locs[u].1-locs[v].1).powi(2)+
+            (locs[u].2-locs[v].2).powi(2)+
+            (locs[u].3-locs[v].3).powi(2)).sqrt();
+            if w < dropoutbound {
+                g.add_edge(u, v, w);
+            }
         }
     }
     return g;
@@ -235,15 +270,21 @@ fn main() {
     let mut avgweight = 0.0;
     let mut generation: time::Duration = Duration::ZERO;
     let mut mst: time::Duration = Duration::ZERO;
+    let mut maxweight = 0.0;
     for _ in 0..numtrials {
         let genstart = Instant::now();
         let g = generate_graph(dimension, numpoints);
         generation += genstart.elapsed();
         let mststart = Instant::now();
-        avgweight += mst_prim(g);
+        let out = mst_prim(&g);
+        if out.1 > maxweight {
+            maxweight = out.1;
+        }
+        avgweight += out.0;
         mst += mststart.elapsed();
     }
     avgweight = avgweight / numtrials as f64;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
-    println!("Generation time: {generation:.2?}. MST time: {mst:.2?}")
+    //println!("Generation time: {generation:.2?}. MST time: {mst:.2?}");
+    //println!("Maximum weight edge used: {maxweight}");
 }
