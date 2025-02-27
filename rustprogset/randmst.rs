@@ -138,8 +138,8 @@ fn mst_prim(g: &Graph) -> (f64, f64, Vec<(usize, usize, f64)>) {
 
 // Generate complete basic graph of random weights. Empirically,
 // I fitted a curve over many trials to the maximum weight edge used.
-// This fit the form k(n)=14,73/n. Conservatively, we can apply 
-// double this, dropping out above 30/n.
+// This fit the form k(n)=14.73/n. Conservatively, we can apply 
+// double this, dropping out above 14.73*1.2/n.
 fn complete_basic(n: usize) -> Graph {
     let mut rng = rand::rng();
     let range = Uniform::new(0.0_f64, 1.0_f64).unwrap();
@@ -147,7 +147,7 @@ fn complete_basic(n: usize) -> Graph {
     for u in 0..n-1 {
         for v in u+1..n {
             let rand = range.sample(&mut rng);
-            if rand < 30.0 / n as f64 {
+            if rand < 17.68 / n as f64 {
                 g.add_edge(u, v, rand);
             }
         }
@@ -170,9 +170,9 @@ fn hypercube(n: usize) -> Graph {
 }
 
 // Fitted to 5.82*(n^-0.6)
-// We can bound at 10 * (n^-0.6)
+// We can bound at 5.82*1.2 * (n^-0.6)
 fn complete_unit_square(n: usize) -> Graph {
-    let dropoutbound: f64 = 10.0 * (n as f64).powf(-0.6);
+    let dropoutbound: f64 = 6.98 * (n as f64).powf(-0.6);
     let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64)> = (0..n).map(
@@ -191,9 +191,9 @@ fn complete_unit_square(n: usize) -> Graph {
     return g;
 }
 // Fitted to 3.71 * (n^-0.42)
-// We can bound to 8 * (n^-0.42)
+// We can bound to 1.2*3.71 * (n^-0.42)
 fn complete_unit_cube(n: usize) -> Graph {
-    let dropoutbound: f64 = 8.0 * (n as f64).powf(-0.42);
+    let dropoutbound: f64 = 4.45 * (n as f64).powf(-0.42);
     let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64, f64)> = (0..n).map(
@@ -215,9 +215,9 @@ fn complete_unit_cube(n: usize) -> Graph {
 }
 
 //Fit to 2.5 * (n^-0.28)
-// We can bound to 5.0 * (n^-0.28)
+// We can bound to 1.2*2.5 * (n^-0.28)
 fn complete_unit_hypercube(n: usize) -> Graph {
-    let dropoutbound: f64 = 5.0 * (n as f64).powf(-0.28);
+    let dropoutbound: f64 = 3.0 * (n as f64).powf(-0.28);
     let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64, f64, f64)> = (0..n).map(
