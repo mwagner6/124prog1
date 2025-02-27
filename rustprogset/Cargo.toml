@@ -8,4 +8,4 @@ rand = "0.9.0"
 
 [[bin]]
 name = "randmst"
-path = "src/randmst.rs"
+path = "randmst.rs"
