@@ -1,12 +1,10 @@
 [package]
-name = "randmst"
+name = "rusttest"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 fastrand = "2.3.0"
 rand = "0.9.0"
-
-[[bin]]
-name = "randmst"
-path = "randmst.rs"
+rand_distr = "0.5.1"
+rand_xorshift = "0.4.0"

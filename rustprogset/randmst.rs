@@ -1,13 +1,11 @@
 use core::{f64, time};
-use std::{collections::HashMap, env, hash::Hash, time::Duration};
-use rand::{distr::{Distribution, Uniform}, Rng};
+use std::{collections::HashMap, env, time::Duration};
 use std::time::Instant;
-
+use fastrand;
 
 struct DHeap {
-    d: usize,
     heap: Vec<(f64, usize)>,
-    index_map: HashMap<usize, usize>, // HashMap to track the index of each usize in the heap
+    d: usize,
 }
 
 fn heap_parent(i: usize, d: usize) -> usize {
@@ -15,7 +13,7 @@ fn heap_parent(i: usize, d: usize) -> usize {
 }
 
 fn heap_children(i: usize, d: usize) -> Vec<usize> {
-    (1 + (i * d)..3 + (i * d)).collect()
+    (1+(i*d)..3+(i*d)).collect()
 }
 
 impl DHeap {
@@ -24,8 +22,6 @@ impl DHeap {
             let p = heap_parent(i, self.d);
             if self.heap[i].0 < self.heap[p].0 {
                 self.heap.swap(i, p);
-                self.index_map.insert(self.heap[i].1, i);
-                self.index_map.insert(self.heap[p].1, p);
                 self.verify_up(p);
             }
         }
@@ -34,11 +30,11 @@ impl DHeap {
     fn verify_down(&mut self, i: usize) {
         let ci = heap_children(i, self.d);
         let mut swap = false;
-        let mut min = self.heap[i].0;
+        let mut  min = self.heap[i].0;
         let mut min_idx = i;
         for idx in ci {
             if idx >= self.heap.len() {
-                break;
+                break
             }
             if self.heap[idx].0 < min {
                 min_idx = idx;
@@ -48,42 +44,25 @@ impl DHeap {
         }
         if swap {
             self.heap.swap(i, min_idx);
-            self.index_map.insert(self.heap[i].1, i);
-            self.index_map.insert(self.heap[min_idx].1, min_idx);
             self.verify_down(min_idx);
         }
     }
 
     fn push(&mut self, item: (f64, usize)) {
-        // If the item with the same usize exists, update if the new weight is smaller
-        if let Some(&idx) = self.index_map.get(&item.1) {
-            if self.heap[idx].0 > item.0 {
-                self.heap[idx] = item;
-                self.verify_up(idx);
-            }
-        } else {
-            // If it's a new usize, simply push it
-            self.heap.push(item);
-            let idx = self.heap.len() - 1;
-            self.index_map.insert(item.1, idx);
-            self.verify_up(idx);
-        }
+        self.heap.push(item);
+        self.verify_up(self.heap.len()-1);
     }
 
-    fn pop(&mut self) -> (f64, usize) {
+    fn pop(&mut self) -> (f64, usize){
         if self.heap.len() < 1 {
             panic!("Tried to pop from empty heap");
         }
         let out = self.heap[0];
-        if self.heap.len() > 1 {
-            let last = self.heap.pop().unwrap();
-            self.heap[0] = last;
-            self.index_map.insert(last.1, 0); // Update the index of the last item
-            self.index_map.remove(&out.1); // Remove the index of the popped item
+        if self.heap.len() > 1{
+            self.heap[0] = self.heap.pop().unwrap();
             self.verify_down(0);
         } else {
             self.heap.pop();
-            self.index_map.remove(&out.1); // Remove the index of the popped item
         }
         out
     }
@@ -91,25 +70,22 @@ impl DHeap {
 
 struct Graph {
     n: usize,
-    adj: HashMap<usize, Vec<(usize, f64)>>
+    adj: Vec<Vec<(usize, f64)>> 
 }
 
 impl Graph {
     fn new(n: usize) -> Graph {
-        let mut map = HashMap::new();
-        for i in 0..n {
-            map.insert(i, Vec::with_capacity(n));
-        }
+        let map = vec![Vec::new(); n];
         Graph {n: n, adj: map}        
     }
 
     fn add_edge(&mut self, u: usize, v: usize, weight: f64) {
-        self.adj.get_mut(&u).unwrap().push((v, weight));
-        self.adj.get_mut(&v).unwrap().push((u, weight));
+        self.adj[u].push((v, weight));
+        self.adj[v].push((u, weight));
     }
 
     fn neighbors(&self, u: usize) -> Vec<(usize, f64)>{
-        self.adj.get(&u).unwrap().to_vec()
+        self.adj[u].clone()
     }
 }
 
@@ -125,7 +101,7 @@ fn mst_prim(g: &Graph) -> (f64, f64, Vec<(usize, usize, f64)>) {
 
     let s = 0;
     dists[s] = 0.0;
-    let mut heap = DHeap { d: n,heap: vec![] , index_map: HashMap::new()};
+    let mut heap = DHeap { heap: vec![], d: n };
     heap.push((0.0, s));
 
     while !heap.heap.is_empty() {
@@ -162,12 +138,10 @@ fn mst_prim(g: &Graph) -> (f64, f64, Vec<(usize, usize, f64)>) {
 // This fit the form k(n)=14.73/n. Conservatively, we can apply 
 // double this, dropping out above 14.73*1.2/n.
 fn complete_basic(n: usize) -> Graph {
-    let mut rng = rand::rng();
-    let range = Uniform::new(0.0_f64, 1.0_f64).unwrap();
     let mut g = Graph::new(n);
     for u in 0..n-1 {
         for v in u+1..n {
-            let rand = range.sample(&mut rng);
+            let rand = fastrand::f64();
             if rand < 17.68 / n as f64 {
                 g.add_edge(u, v, rand);
             }
@@ -177,13 +151,12 @@ fn complete_basic(n: usize) -> Graph {
 }
 
 fn hypercube(n: usize) -> Graph {
-    let mut rng = rand::rng();
     let mut g = Graph::new(n);
     for u in 0..n-1 {
         for v in u+1..n {
             let diff = v - u;
             if diff & diff - 1 == 0 {
-                g.add_edge(u, v, rng.random_range(0.0_f64..1.0));
+                g.add_edge(u, v, fastrand::f64());
             }
         }
     }
@@ -194,11 +167,10 @@ fn hypercube(n: usize) -> Graph {
 // We can bound at 5.82*1.2 * (n^-0.6)
 fn complete_unit_square(n: usize) -> Graph {
     let dropoutbound: f64 = 6.98 * (n as f64).powf(-0.6);
-    let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64)> = (0..n).map(
-        |_| (rng.random_range(0.0_f64..1.0), 
-                rng.random_range(0.0_f64..1.0))
+        |_| (fastrand::f64(), 
+                fastrand::f64())
         ).collect();
     for u in 0..n-1 {
         for v in u+1..n {
@@ -215,12 +187,11 @@ fn complete_unit_square(n: usize) -> Graph {
 // We can bound to 1.2*3.71 * (n^-0.42)
 fn complete_unit_cube(n: usize) -> Graph {
     let dropoutbound: f64 = 4.45 * (n as f64).powf(-0.42);
-    let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64, f64)> = (0..n).map(
-        |_| (rng.random_range(0.0_f64..1.0), 
-                rng.random_range(0.0_f64..1.0), 
-                rng.random_range(0.0_f64..1.0))
+        |_| (fastrand::f64(), 
+                fastrand::f64(), 
+                fastrand::f64())
         ).collect();
     for u in 0..n-1 {
         for v in u+1..n {
@@ -239,13 +210,12 @@ fn complete_unit_cube(n: usize) -> Graph {
 // We can bound to 1.2*2.5 * (n^-0.28)
 fn complete_unit_hypercube(n: usize) -> Graph {
     let dropoutbound: f64 = 3.0 * (n as f64).powf(-0.28);
-    let mut rng = rand::rng();
     let mut g = Graph::new(n);
     let locs: Vec<(f64, f64, f64, f64)> = (0..n).map(
-        |_| (rng.random_range(0.0_f64..1.0), 
-                rng.random_range(0.0_f64..1.0), 
-                rng.random_range(0.0_f64..1.0),
-                rng.random_range(0.0_f64..1.0))
+        |_| (fastrand::f64(), 
+                fastrand::f64(), 
+                fastrand::f64(),
+                fastrand::f64())
         ).collect();
     for u in 0..n-1 {
         for v in u+1..n {
