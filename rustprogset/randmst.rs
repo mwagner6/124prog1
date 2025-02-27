@@ -1,5 +1,5 @@
 use core::{f64, time};
-use std::{collections::HashMap, env, time::Duration};
+use std::{env, time::Duration};
 use std::time::Instant;
 use fastrand;
 
@@ -89,15 +89,10 @@ impl Graph {
     }
 }
 
-fn mst_prim(g: &Graph) -> (f64, f64, Vec<(usize, usize, f64)>) {
+fn mst_prim(g: &Graph) -> f64 {
     let n = g.n;
     let mut visited = vec![false; n];
     let mut dists = vec![f64::INFINITY; n];
-    let mut parent = vec![None; n]; // Track where each node was reached from
-    let mut edges = Vec::with_capacity(n - 1);
-
-    let mut max_edge_weight = 0.0;
-    let mut total_weight = 0.0;
 
     let s = 0;
     dists[s] = 0.0;
@@ -111,26 +106,15 @@ fn mst_prim(g: &Graph) -> (f64, f64, Vec<(usize, usize, f64)>) {
         }
         visited[u] = true;
 
-        // If u has a parent, add the edge to the MST
-        if let Some(p) = parent[u] {
-            let weight = dists[u];
-            edges.push((p, u, weight));
-            total_weight += weight;
-            if weight > max_edge_weight {
-                max_edge_weight = weight;
-            }
-        }
-
         for (v, weight) in g.neighbors(u) {
             if !visited[v] && dists[v] > weight {
                 dists[v] = weight;
-                parent[v] = Some(u); // Track parent of v
                 heap.push((weight, v));
             }
         }
     }
 
-    (total_weight, max_edge_weight, edges)
+    dists.iter().sum()
 }
 
 // Generate complete basic graph of random weights. Empirically,
@@ -261,21 +245,15 @@ fn main() {
     let mut avgweight = 0.0;
     let mut generation: time::Duration = Duration::ZERO;
     let mut mst: time::Duration = Duration::ZERO;
-    let mut maxweight = 0.0;
     for _ in 0..numtrials {
         let genstart = Instant::now();
         let g = generate_graph(dimension, numpoints);
         generation += genstart.elapsed();
         let mststart = Instant::now();
-        let out = mst_prim(&g);
-        if out.1 > maxweight {
-            maxweight = out.1;
-        }
-        avgweight += out.0;
+        avgweight += mst_prim(&g);
         mst += mststart.elapsed();
     }
     avgweight = avgweight / numtrials as f64;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
     println!("Generation time: {generation:.2?}. MST time: {mst:.2?}");
-    println!("Maximum weight edge used: {maxweight}");
 }
