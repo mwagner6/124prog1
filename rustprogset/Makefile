@@ -1,3 +1,3 @@
-randmst:
-	cargo build --release
+all:
+	cargo build --release --bin randmst
 	cp target/release/randmst .

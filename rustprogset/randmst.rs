@@ -1,7 +1,6 @@
 use core::f64;
 use std::{collections::HashMap, env};
 use rand::Rng;
-use std::time::Instant;
 
 
 struct BinHeap {
@@ -225,13 +224,10 @@ fn generate_graph(dim: u32, n: u32) -> Graph {
 }
 
 fn main() {
-    let now = Instant::now();
     let args: Vec<String> = env::args().collect();
     let numpoints: u32 = args[2].parse::<u32>().unwrap();
     let numtrials: u32 = args[3].parse::<u32>().unwrap();
     let dimension: u32 = args[4].parse::<u32>().unwrap();
-
-    println!("{numpoints} {numtrials} {dimension}");
 
     let mut avgweight = 0.0;
     for _ in 0..numtrials {
@@ -240,5 +236,4 @@ fn main() {
     }
     avgweight = avgweight / numtrials as f64;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
-    println!("Elapsed: {:.2?}", now.elapsed());
 }
