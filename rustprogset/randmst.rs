@@ -1,40 +1,44 @@
 use core::{f64, time};
-use std::{collections::HashMap, env, time::Duration};
+use std::{collections::HashMap, env, hash::Hash, time::Duration};
 use rand::{distr::{Distribution, Uniform}, Rng};
 use std::time::Instant;
 
 
-struct BinHeap {
-    heap: Vec<(f64, usize)>
+struct DHeap {
+    d: usize,
+    heap: Vec<(f64, usize)>,
+    index_map: HashMap<usize, usize>, // HashMap to track the index of each usize in the heap
 }
 
-fn heap_parent(i: usize) -> usize {
-    (i - 1) / 2
+fn heap_parent(i: usize, d: usize) -> usize {
+    (i - 1) / d
 }
 
-fn heap_children(i: usize) -> Vec<usize> {
-    (1+(i*2)..3+(i*2)).collect()
+fn heap_children(i: usize, d: usize) -> Vec<usize> {
+    (1 + (i * d)..3 + (i * d)).collect()
 }
 
-impl BinHeap {
+impl DHeap {
     fn verify_up(&mut self, i: usize) {
         if i != 0 {
-            let p = heap_parent(i);
+            let p = heap_parent(i, self.d);
             if self.heap[i].0 < self.heap[p].0 {
                 self.heap.swap(i, p);
+                self.index_map.insert(self.heap[i].1, i);
+                self.index_map.insert(self.heap[p].1, p);
                 self.verify_up(p);
             }
         }
     }
 
     fn verify_down(&mut self, i: usize) {
-        let ci = heap_children(i);
+        let ci = heap_children(i, self.d);
         let mut swap = false;
-        let mut  min = self.heap[i].0;
+        let mut min = self.heap[i].0;
         let mut min_idx = i;
         for idx in ci {
             if idx >= self.heap.len() {
-                break
+                break;
             }
             if self.heap[idx].0 < min {
                 min_idx = idx;
@@ -44,25 +48,42 @@ impl BinHeap {
         }
         if swap {
             self.heap.swap(i, min_idx);
+            self.index_map.insert(self.heap[i].1, i);
+            self.index_map.insert(self.heap[min_idx].1, min_idx);
             self.verify_down(min_idx);
         }
     }
 
     fn push(&mut self, item: (f64, usize)) {
-        self.heap.push(item);
-        self.verify_up(self.heap.len()-1);
+        // If the item with the same usize exists, update if the new weight is smaller
+        if let Some(&idx) = self.index_map.get(&item.1) {
+            if self.heap[idx].0 > item.0 {
+                self.heap[idx] = item;
+                self.verify_up(idx);
+            }
+        } else {
+            // If it's a new usize, simply push it
+            self.heap.push(item);
+            let idx = self.heap.len() - 1;
+            self.index_map.insert(item.1, idx);
+            self.verify_up(idx);
+        }
     }
 
-    fn pop(&mut self) -> (f64, usize){
+    fn pop(&mut self) -> (f64, usize) {
         if self.heap.len() < 1 {
             panic!("Tried to pop from empty heap");
         }
         let out = self.heap[0];
-        if self.heap.len() > 1{
-            self.heap[0] = self.heap.pop().unwrap();
+        if self.heap.len() > 1 {
+            let last = self.heap.pop().unwrap();
+            self.heap[0] = last;
+            self.index_map.insert(last.1, 0); // Update the index of the last item
+            self.index_map.remove(&out.1); // Remove the index of the popped item
             self.verify_down(0);
         } else {
             self.heap.pop();
+            self.index_map.remove(&out.1); // Remove the index of the popped item
         }
         out
     }
@@ -104,7 +125,7 @@ fn mst_prim(g: &Graph) -> (f64, f64, Vec<(usize, usize, f64)>) {
 
     let s = 0;
     dists[s] = 0.0;
-    let mut heap = BinHeap { heap: vec![] };
+    let mut heap = DHeap { d: n,heap: vec![] , index_map: HashMap::new()};
     heap.push((0.0, s));
 
     while !heap.heap.is_empty() {
@@ -285,6 +306,6 @@ fn main() {
     }
     avgweight = avgweight / numtrials as f64;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
-    //println!("Generation time: {generation:.2?}. MST time: {mst:.2?}");
-    //println!("Maximum weight edge used: {maxweight}");
+    println!("Generation time: {generation:.2?}. MST time: {mst:.2?}");
+    println!("Maximum weight edge used: {maxweight}");
 }
