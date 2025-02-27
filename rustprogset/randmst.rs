@@ -1,6 +1,7 @@
-use core::f64;
-use std::{collections::HashMap, env};
-use rand::Rng;
+use core::{f64, time};
+use std::{collections::HashMap, env, time::Duration};
+use rand::{distr::{Distribution, Uniform}, Rng};
+use std::time::Instant;
 
 
 struct BinHeap {
@@ -76,7 +77,7 @@ impl Graph {
     fn new(n: usize) -> Graph {
         let mut map = HashMap::new();
         for i in 0..n {
-            map.insert(i, vec![]);
+            map.insert(i, Vec::with_capacity(n));
         }
         Graph {n: n, adj: map}        
     }
@@ -100,6 +101,7 @@ fn mst_prim(g: Graph) -> f64 {
     dists[s] = 0.0;
     let mut heap = BinHeap{heap: vec![]};
     heap.push((0.0, s));
+    
 
     while heap.heap.len() > 0 {
         let (_key, u) = heap.pop();
@@ -119,10 +121,11 @@ fn mst_prim(g: Graph) -> f64 {
 
 fn complete_basic(n: usize) -> Graph {
     let mut rng = rand::rng();
+    let range = Uniform::new(0.0_f64, 1.0_f64).unwrap();
     let mut g = Graph::new(n);
     for u in 0..n-1 {
         for v in u+1..n {
-            g.add_edge(u, v, rng.random_range(0.0_..1.0));
+            g.add_edge(u, v, range.sample(&mut rng));
         }
     }
     return g;
@@ -230,10 +233,17 @@ fn main() {
     let dimension: u32 = args[4].parse::<u32>().unwrap();
 
     let mut avgweight = 0.0;
+    let mut generation: time::Duration = Duration::ZERO;
+    let mut mst: time::Duration = Duration::ZERO;
     for _ in 0..numtrials {
+        let genstart = Instant::now();
         let g = generate_graph(dimension, numpoints);
+        generation += genstart.elapsed();
+        let mststart = Instant::now();
         avgweight += mst_prim(g);
+        mst += mststart.elapsed();
     }
     avgweight = avgweight / numtrials as f64;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
+    println!("Generation time: {generation:.2?}. MST time: {mst:.2?}")
 }
