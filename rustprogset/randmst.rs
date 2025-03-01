@@ -2,7 +2,11 @@ use core::{f64, time};
 use std::{env, time::Duration};
 use std::time::Instant;
 use fastrand;
+use std::thread;
+use std::sync::{Arc, Mutex};
+use num_cpus;
 
+#[derive(Debug)]
 struct DHeap {
     heap: Vec<(f64, usize)>,
     d: usize,
@@ -68,6 +72,7 @@ impl DHeap {
     }
 }
 
+#[derive(Debug)]
 struct Graph {
     n: usize,
     adj: Vec<Vec<(usize, f64)>> 
@@ -82,6 +87,13 @@ impl Graph {
     fn add_edge(&mut self, u: usize, v: usize, weight: f64) {
         self.adj[u].push((v, weight));
         self.adj[v].push((u, weight));
+    }
+
+    fn add_edges_batch(&mut self, edges: Vec<(usize, usize, f64)>) {
+        for (u, v, weight) in edges {
+            self.adj[u].push((v, weight));
+            self.adj[v].push((u, weight));
+        }
     }
 
     fn neighbors(&self, u: usize) -> Vec<(usize, f64)>{
@@ -117,102 +129,266 @@ fn mst_prim(g: &Graph) -> f64 {
     dists.iter().sum()
 }
 
-// Generate complete basic graph of random weights. Empirically,
-// I fitted a curve over many trials to the maximum weight edge used.
-// This fit the form k(n)=14.73/n. Conservatively, we can apply 
-// double this, dropping out above 14.73*1.2/n.
+// Generate complete basic graph of random weights with multithreading
 fn complete_basic(n: usize) -> Graph {
+    let num_threads = num_cpus::get();
     let mut g = Graph::new(n);
-    for u in 0..n-1 {
-        for v in u+1..n {
-            let rand = fastrand::f64();
-            if rand < 17.68 / n as f64 {
-                g.add_edge(u, v, rand);
+    let threshold = 17.68 / n as f64;
+    
+    // Create thread-local RNGs
+    let mut handles = vec![];
+    let graph = Arc::new(Mutex::new(g));
+    
+    for thread_id in 0..num_threads {
+        let graph_clone = Arc::clone(&graph);
+        let threshold_copy = threshold;
+        let n_copy = n;
+        
+        let handle = thread::spawn(move || {
+            let mut local_edges = Vec::new();
+            let mut rng = fastrand::Rng::new();
+            
+            // Each thread processes a range of vertices
+            let chunk_size = (n_copy - 1) / num_threads + 1;
+            let start_u = thread_id * chunk_size;
+            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
+            
+            for u in start_u..end_u {
+                for v in u+1..n_copy {
+                    let rand = rng.f64();
+                    if rand < threshold_copy {
+                        local_edges.push((u, v, rand));
+                    }
+                }
             }
-        }
+            
+            let mut g = graph_clone.lock().unwrap();
+            g.add_edges_batch(local_edges);
+        });
+        
+        handles.push(handle);
     }
-    return g;
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    Arc::try_unwrap(graph).unwrap().into_inner().unwrap()
 }
 
 fn hypercube(n: usize) -> Graph {
+    let num_threads = num_cpus::get();
     let mut g = Graph::new(n);
-    for u in 0..n-1 {
-        for v in u+1..n {
-            let diff = v - u;
-            if diff & diff - 1 == 0 {
-                g.add_edge(u, v, fastrand::f64());
+    
+    let mut handles = vec![];
+    let graph = Arc::new(Mutex::new(g));
+    
+    for thread_id in 0..num_threads {
+        let graph_clone = Arc::clone(&graph);
+        let n_copy = n;
+        
+        let handle = thread::spawn(move || {
+            let mut local_edges = Vec::new();
+            let mut rng = fastrand::Rng::new();
+            
+            // Each thread processes a range of vertices
+            let chunk_size = (n_copy - 1) / num_threads + 1;
+            let start_u = thread_id * chunk_size;
+            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
+            
+            for u in start_u..end_u {
+                for v in u+1..n_copy {
+                    let diff = v - u;
+                    if diff & diff - 1 == 0 {
+                        local_edges.push((u, v, rng.f64()));
+                    }
+                }
             }
-        }
+            
+            let mut g = graph_clone.lock().unwrap();
+            g.add_edges_batch(local_edges);
+        });
+        
+        handles.push(handle);
     }
-    return g;
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    Arc::try_unwrap(graph).unwrap().into_inner().unwrap()
 }
 
 // Fitted to 5.82*(n^-0.6)
 // We can bound at 5.82*1.2 * (n^-0.6)
 fn complete_unit_square(n: usize) -> Graph {
+    let num_threads = num_cpus::get();
     let dropoutbound: f64 = 6.98 * (n as f64).powf(-0.6);
-    let mut g = Graph::new(n);
+    
+    // Generate locations first
+    let mut rng = fastrand::Rng::new();
     let locs: Vec<(f64, f64)> = (0..n).map(
-        |_| (fastrand::f64(), 
-                fastrand::f64())
-        ).collect();
-    for u in 0..n-1 {
-        for v in u+1..n {
-            let w = ((locs[u].0-locs[v].0).powi(2)+
-            (locs[u].1-locs[v].1).powi(2)).sqrt();
-            if w < dropoutbound {
-                g.add_edge(u, v, w);
+        |_| (rng.f64(), rng.f64())
+    ).collect();
+    
+    let mut g = Graph::new(n);
+    let locs_arc = Arc::new(locs);
+    let mut handles = vec![];
+    let graph = Arc::new(Mutex::new(g));
+    
+    for thread_id in 0..num_threads {
+        let graph_clone = Arc::clone(&graph);
+        let locs_clone = Arc::clone(&locs_arc);
+        let n_copy = n;
+        let dropoutbound_copy = dropoutbound;
+        
+        let handle = thread::spawn(move || {
+            let mut local_edges = Vec::new();
+            
+            // Each thread processes a range of vertices
+            let chunk_size = (n_copy - 1) / num_threads + 1;
+            let start_u = thread_id * chunk_size;
+            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
+            
+            for u in start_u..end_u {
+                for v in u+1..n_copy {
+                    let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
+                             (locs_clone[u].1-locs_clone[v].1).powi(2)).sqrt();
+                    if w < dropoutbound_copy {
+                        local_edges.push((u, v, w));
+                    }
+                }
             }
-        }
+            
+            let mut g = graph_clone.lock().unwrap();
+            g.add_edges_batch(local_edges);
+        });
+        
+        handles.push(handle);
     }
-    return g;
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    Arc::try_unwrap(graph).unwrap().into_inner().unwrap()
 }
 // Fitted to 3.71 * (n^-0.42)
 // We can bound to 1.2*3.71 * (n^-0.42)
 fn complete_unit_cube(n: usize) -> Graph {
+    let num_threads = num_cpus::get();
     let dropoutbound: f64 = 4.45 * (n as f64).powf(-0.42);
-    let mut g = Graph::new(n);
+    
+    // Generate locations first
+    let mut rng = fastrand::Rng::new();
     let locs: Vec<(f64, f64, f64)> = (0..n).map(
-        |_| (fastrand::f64(), 
-                fastrand::f64(), 
-                fastrand::f64())
-        ).collect();
-    for u in 0..n-1 {
-        for v in u+1..n {
-            let w = ((locs[u].0-locs[v].0).powi(2)+
-            (locs[u].1-locs[v].1).powi(2)+
-            (locs[u].2-locs[v].2).powi(2)).sqrt();
-            if w < dropoutbound {
-                g.add_edge(u, v, w);
+        |_| (rng.f64(), rng.f64(), rng.f64())
+    ).collect();
+    
+    let mut g = Graph::new(n);
+    let locs_arc = Arc::new(locs);
+    let mut handles = vec![];
+    let graph = Arc::new(Mutex::new(g));
+    
+    for thread_id in 0..num_threads {
+        let graph_clone = Arc::clone(&graph);
+        let locs_clone = Arc::clone(&locs_arc);
+        let n_copy = n;
+        let dropoutbound_copy = dropoutbound;
+        
+        let handle = thread::spawn(move || {
+            let mut local_edges = Vec::new();
+            
+            // Each thread processes a range of vertices
+            let chunk_size = (n_copy - 1) / num_threads + 1;
+            let start_u = thread_id * chunk_size;
+            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
+            
+            for u in start_u..end_u {
+                for v in u+1..n_copy {
+                    let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
+                             (locs_clone[u].1-locs_clone[v].1).powi(2)+
+                             (locs_clone[u].2-locs_clone[v].2).powi(2)).sqrt();
+                    if w < dropoutbound_copy {
+                        local_edges.push((u, v, w));
+                    }
+                }
             }
-        }
+            
+            let mut g = graph_clone.lock().unwrap();
+            g.add_edges_batch(local_edges);
+        });
+        
+        handles.push(handle);
     }
-    return g;
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    Arc::try_unwrap(graph).unwrap().into_inner().unwrap()
 }
 
 //Fit to 2.5 * (n^-0.28)
 // We can bound to 1.2*2.5 * (n^-0.28)
 fn complete_unit_hypercube(n: usize) -> Graph {
+    let num_threads = num_cpus::get();
     let dropoutbound: f64 = 3.0 * (n as f64).powf(-0.28);
-    let mut g = Graph::new(n);
+    
+    // Generate locations first
+    let mut rng = fastrand::Rng::new();
     let locs: Vec<(f64, f64, f64, f64)> = (0..n).map(
-        |_| (fastrand::f64(), 
-                fastrand::f64(), 
-                fastrand::f64(),
-                fastrand::f64())
-        ).collect();
-    for u in 0..n-1 {
-        for v in u+1..n {
-            let w = ((locs[u].0-locs[v].0).powi(2)+
-            (locs[u].1-locs[v].1).powi(2)+
-            (locs[u].2-locs[v].2).powi(2)+
-            (locs[u].3-locs[v].3).powi(2)).sqrt();
-            if w < dropoutbound {
-                g.add_edge(u, v, w);
+        |_| (rng.f64(), rng.f64(), rng.f64(), rng.f64())
+    ).collect();
+    
+    let mut g = Graph::new(n);
+    let locs_arc = Arc::new(locs);
+    let mut handles = vec![];
+    let graph = Arc::new(Mutex::new(g));
+    
+    for thread_id in 0..num_threads {
+        let graph_clone = Arc::clone(&graph);
+        let locs_clone = Arc::clone(&locs_arc);
+        let n_copy = n;
+        let dropoutbound_copy = dropoutbound;
+        
+        let handle = thread::spawn(move || {
+            let mut local_edges = Vec::new();
+            
+            // Each thread processes a range of vertices
+            let chunk_size = (n_copy - 1) / num_threads + 1;
+            let start_u = thread_id * chunk_size;
+            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
+            
+            for u in start_u..end_u {
+                for v in u+1..n_copy {
+                    let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
+                             (locs_clone[u].1-locs_clone[v].1).powi(2)+
+                             (locs_clone[u].2-locs_clone[v].2).powi(2)+
+                             (locs_clone[u].3-locs_clone[v].3).powi(2)).sqrt();
+                    if w < dropoutbound_copy {
+                        local_edges.push((u, v, w));
+                    }
+                }
             }
-        }
+            
+            let mut g = graph_clone.lock().unwrap();
+            g.add_edges_batch(local_edges);
+        });
+        
+        handles.push(handle);
     }
-    return g;
+    
+    // Wait for all threads to complete
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    
+    Arc::try_unwrap(graph).unwrap().into_inner().unwrap()
 }
 
 fn generate_graph(dim: u32, n: u32) -> Graph {
