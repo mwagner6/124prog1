@@ -139,7 +139,7 @@ impl Graph {
 }
 
 // Prim's algorithm implementation
-fn mst_prim(g: &Graph) -> f32 {
+fn mst_prim(g: &Graph) -> Option<f32> {
     // Initialize lists for distances and visited nodes
     let n = g.n;
     let mut visited = vec![false; n];
@@ -168,8 +168,10 @@ fn mst_prim(g: &Graph) -> f32 {
             }
         }
     }
-
-    dists.iter().sum()
+    if visited.iter().any(|&x| !x) {
+        return None;
+    }
+    Some(dists.iter().sum())
 }
 
 // Generate complete basic graph of random weights with multithreading
@@ -370,11 +372,18 @@ fn main() {
     let dimension: u32 = args[4].parse::<u32>().unwrap();
 
     let mut avgweight = 0.0;
+    let mut successes = 0;
     for _ in 0..numtrials {
         let g = generate_graph(dimension, numpoints);
-        
-        avgweight += mst_prim(&g);
+        // Check for the rare case that we overpruned. If this is the case, don't increment the amount we divide by to get our average.
+        match mst_prim(&g) {
+            Some(w) => {
+                avgweight += w;
+                successes += 1;
+            },
+            None => {}
+        }
     }
-    avgweight = avgweight / numtrials as f32;
+    avgweight = avgweight / successes as f32;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
 }
