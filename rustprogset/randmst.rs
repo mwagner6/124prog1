@@ -1,6 +1,5 @@
-use core::{f32, time};
-use std::{env, time::Duration};
-use std::time::Instant;
+use core::f32;
+use std::env;
 use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 use frand::Rand;
@@ -371,18 +370,11 @@ fn main() {
     let dimension: u32 = args[4].parse::<u32>().unwrap();
 
     let mut avgweight = 0.0;
-    let mut generation: time::Duration = Duration::ZERO;
-    let mut mst: time::Duration = Duration::ZERO;
     for _ in 0..numtrials {
-        let genstart = Instant::now();
         let g = generate_graph(dimension, numpoints);
-        generation += genstart.elapsed();
         
-        let mststart = Instant::now();
         avgweight += mst_prim(&g);
-        mst += mststart.elapsed();
     }
     avgweight = avgweight / numtrials as f32;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
-    println!("Generation time: {generation:.2?}. MST time: {mst:.2?}");
 }
