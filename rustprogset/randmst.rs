@@ -1,10 +1,7 @@
 use core::{f32, time};
 use std::{env, time::Duration};
 use std::time::Instant;
-use fastrand;
-use std::thread;
 use std::sync::{Arc, Mutex};
-use num_cpus;
 use rayon::prelude::*;
 use frand::Rand;
 
@@ -312,7 +309,6 @@ fn complete_unit_cube(n: usize) -> Graph {
 //Fit to 2.5 * (n^-0.28)
 // We can bound to 1.2*2.5 * (n^-0.28)
 fn complete_unit_hypercube(n: usize) -> Graph {
-    let num_threads = num_cpus::get();
     let dropoutbound: f32 = 3.0 * (n as f32).powf(-0.28);
     
     // Generate locations first
@@ -323,47 +319,25 @@ fn complete_unit_hypercube(n: usize) -> Graph {
     
     let g = Graph::new(n);
     let locs_arc = Arc::new(locs);
-    let mut handles = vec![];
     let graph = Arc::new(Mutex::new(g));
     
-    for thread_id in 0..num_threads {
+    (0..n).into_par_iter().for_each(|u| {
+        let mut local_edges = Vec::new();
         let graph_clone = Arc::clone(&graph);
-        let locs_clone = Arc::clone(&locs_arc);
-        let n_copy = n;
         let dropoutbound_copy = dropoutbound;
-        
-        let handle = thread::spawn(move || {
-            let mut local_edges = Vec::new();
-            
-            // Each thread processes a range of vertices
-            let chunk_size = (n_copy - 1) / num_threads + 1;
-            let start_u = thread_id * chunk_size;
-            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
-            
-            for u in start_u..end_u {
-                for v in u+1..n_copy {
-                    let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
-                            (locs_clone[u].1-locs_clone[v].1).powi(2)+
-                            (locs_clone[u].2-locs_clone[v].2).powi(2)+
-                            (locs_clone[u].3-locs_clone[v].3).powi(2)).sqrt();
-                    if w < dropoutbound_copy {
-                        local_edges.push((u, v, w));
-                    }
-                }
+        let locs_clone = Arc::clone(&locs_arc);
+
+        for v in u+1..n {
+            let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+(locs_clone[u].1-locs_clone[v].1).powi(2)+(locs_clone[u].2-locs_clone[v].2).powi(2)+(locs_clone[u].3-locs_clone[v].3).powi(2)).sqrt();
+            if w < dropoutbound_copy {
+                local_edges.push((u, v, w));
             }
-            
-            let mut g = graph_clone.lock().unwrap();
-            g.add_edges_batch_one_way(local_edges);
-        });
+        }
+
+        let mut g = graph_clone.lock().unwrap();
+        g.add_edges_batch_one_way(local_edges);
+    });
         
-        handles.push(handle);
-    }
-    
-    // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
-    
     let mut graph = Arc::try_unwrap(graph).unwrap().into_inner().unwrap();
     graph.ensure_symmetry();
     graph
