@@ -5,36 +5,45 @@ use fastrand;
 use std::thread;
 use std::sync::{Arc, Mutex};
 use num_cpus;
+use rayon::prelude::*;
 
+// DHeap struct
 struct DHeap {
     heap: Vec<(f64, usize)>,
     d: usize,
 }
 
+// Function for determining the parent of an index in heap
 fn heap_parent(i: usize, d: usize) -> usize {
     (i - 1) / d
 }
 
+// Function to determine children indices of an index in heap
 fn heap_children(i: usize, d: usize) -> Vec<usize> {
     (1+(i*d)..3+(i*d)).collect()
 }
 
 impl DHeap {
+    // Function to verify that parents of an item in heap are valid (recursive)
     fn verify_up(&mut self, i: usize) {
+        // If not the root node, check that value is larger than parent. If not, swap
         if i != 0 {
             let p = heap_parent(i, self.d);
             if self.heap[i].0 < self.heap[p].0 {
                 self.heap.swap(i, p);
+                // Verify upwards from parent node
                 self.verify_up(p);
             }
         }
     }
 
+    // Functino to recursively verify that children of an item are valid
     fn verify_down(&mut self, i: usize) {
         let ci = heap_children(i, self.d);
         let mut swap = false;
         let mut  min = self.heap[i].0;
         let mut min_idx = i;
+        // Loop over children, finding the child with the smallest value
         for idx in ci {
             if idx >= self.heap.len() {
                 break
@@ -45,22 +54,26 @@ impl DHeap {
                 swap = true;
             }
         }
+        // If we found a child with value smaller than current node's value, swap them and verify downard from the child
         if swap {
             self.heap.swap(i, min_idx);
             self.verify_down(min_idx);
         }
     }
 
+    // Insert item into and verify parents
     fn push(&mut self, item: (f64, usize)) {
         self.heap.push(item);
         self.verify_up(self.heap.len()-1);
     }
 
+    // Remove smallest item from heap and verify its children
     fn pop(&mut self) -> (f64, usize){
         if self.heap.len() < 1 {
             panic!("Tried to pop from empty heap");
         }
         let out = self.heap[0];
+        // Remove first item in heap, and verify downwards from the root to ensure that the heap is still valid 
         if self.heap.len() > 1{
             self.heap[0] = self.heap.pop().unwrap();
             self.verify_down(0);
@@ -71,50 +84,42 @@ impl DHeap {
     }
 }
 
+// Graph struct
 #[derive(Debug)]
 struct Graph {
     n: usize,
     adj: Vec<Vec<(usize, f64)>> 
 }
 
+
 impl Graph {
+    // Initialize new graph with $n$ nodes, and a vector of adjacency lists
     fn new(n: usize) -> Graph {
         let map = vec![Vec::new(); n];
         Graph {n: n, adj: map}        
     }
 
-    fn add_edge(&mut self, u: usize, v: usize, weight: f64) {
-        self.adj[u].push((v, weight));
-        self.adj[v].push((u, weight));
-    }
-
+    // Add one-directional edges (To be verified and copied over later)
     fn add_edge_one_way(&mut self, u: usize, v: usize, weight: f64) {
         self.adj[u].push((v, weight));
     }
 
-    fn add_edges_batch(&mut self, edges: Vec<(usize, usize, f64)>) {
-        for (u, v, weight) in edges {
-            self.adj[u].push((v, weight));
-            self.adj[v].push((u, weight));
-        }
-    }
-
+    // Function to add many edges
     fn add_edges_batch_one_way(&mut self, edges: Vec<(usize, usize, f64)>) {
         for (u, v, weight) in edges {
             self.add_edge_one_way(u, v, weight);
         }
     }
 
+    // For each edge, push its reverse edge in order to ensure our graph is symmetric (undirected)
     fn ensure_symmetry(&mut self) {
         let n = self.n;
         
-        // Create a copy of the current adjacency list
         let current_adj = self.adj.clone();
         
-        // For each edge u->v in the original graph, ensure v->u exists
+        // For all edges, check that their reverse also exists
         for u in 0..n {
             for &(v, weight) in &current_adj[u] {
-                // Check if v->u exists
                 let mut has_reverse = false;
                 for &(w, _) in &self.adj[v] {
                     if w == u {
@@ -123,7 +128,6 @@ impl Graph {
                     }
                 }
                 
-                // If reverse edge doesn't exist, add it
                 if !has_reverse {
                     self.adj[v].push((u, weight));
                 }
@@ -131,48 +135,27 @@ impl Graph {
         }
     }
 
+    // Function to return neighbors of a node
     fn neighbors(&self, u: usize) -> Vec<(usize, f64)>{
         self.adj[u].clone()
     }
-
-    // Verify that the graph is symmetric
-    fn is_symmetric(&self) -> bool {
-        for u in 0..self.n {
-            for &(v, weight_uv) in &self.adj[u] {
-                // Find edge v->u in v's adjacency list
-                let mut found = false;
-                for &(x, weight_vx) in &self.adj[v] {
-                    if x == u {
-                        if (weight_uv - weight_vx).abs() > 1e-10 {
-                            println!("Edge weights don't match: ({}, {}, {}) vs ({}, {}, {})", 
-                                     u, v, weight_uv, v, u, weight_vx);
-                            return false;
-                        }
-                        found = true;
-                        break;
-                    }
-                }
-                
-                if !found {
-                    println!("Missing edge: ({}, {})", v, u);
-                    return false;
-                }
-            }
-        }
-        true
-    }
 }
 
+// Prim's algorithm implementation
 fn mst_prim(g: &Graph) -> f64 {
+    // Initialize lists for distances and visited nodes
     let n = g.n;
     let mut visited = vec![false; n];
     let mut dists = vec![f64::INFINITY; n];
 
     let s = 0;
     dists[s] = 0.0;
-    let mut heap = DHeap { heap: vec![], d: n };
+
+    // Initialize our heap and add our source node to it
+    let mut heap = DHeap { heap: vec![], d: 2 };
     heap.push((0.0, s));
 
+    // While there are items in our heap, we remove the item with the minimum distance, and if it leads to an unvisited node, we visit that node
     while !heap.heap.is_empty() {
         let (_key, u) = heap.pop();
         if visited[u] {
@@ -180,6 +163,7 @@ fn mst_prim(g: &Graph) -> f64 {
         }
         visited[u] = true;
 
+        // We only keep track of the weight of added edges, not weight to reach them from the source, to make total weight easier to compute
         for (v, weight) in g.neighbors(u) {
             if !visited[v] && dists[v] > weight {
                 dists[v] = weight;
@@ -193,94 +177,58 @@ fn mst_prim(g: &Graph) -> f64 {
 
 // Generate complete basic graph of random weights with multithreading
 fn complete_basic(n: usize) -> Graph {
-    let num_threads = num_cpus::get();
-    let mut g = Graph::new(n);
     let threshold = 17.68 / n as f64;
-    
-    // Create thread-local RNGs
-    let mut handles = vec![];
+    let g = Graph::new(n);
     let graph = Arc::new(Mutex::new(g));
-    
-    for thread_id in 0..num_threads {
+
+    // Use parallel iterators to allocate work for each thread
+    (0..n).into_par_iter().for_each(|u| {
+        let mut local_edges = Vec::new();
+        let mut rng = fastrand::Rng::new();
+
         let graph_clone = Arc::clone(&graph);
-        let threshold_copy = threshold;
-        let n_copy = n;
-        
-        let handle = thread::spawn(move || {
-            let mut local_edges = Vec::new();
-            let mut rng = fastrand::Rng::new();
-            
-            // Each thread processes a range of vertices
-            let chunk_size = (n_copy - 1) / num_threads + 1;
-            let start_u = thread_id * chunk_size;
-            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
-            
-            for u in start_u..end_u {
-                for v in u+1..n_copy {
-                    let rand = rng.f64();
-                    if rand < threshold_copy {
-                        local_edges.push((u, v, rand));
-                    }
-                }
+
+        // Generate upper triangular edges, then later we will copy edges over
+        for v in u + 1..n {
+            let w = rng.f64();
+            if w < threshold {
+                local_edges.push((u, v, w));
             }
-            
-            let mut g = graph_clone.lock().unwrap();
-            g.add_edges_batch_one_way(local_edges);
-        });
-        
-        handles.push(handle);
-    }
-    
-    // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
-    
+        }
+
+        // Insert edges in batches so we lock our Mutex less
+        let mut g = graph_clone.lock().unwrap();
+        g.add_edges_batch_one_way(local_edges);
+    });
+
+    // Ensure graph symmetry after all parallel work is done
     let mut graph = Arc::try_unwrap(graph).unwrap().into_inner().unwrap();
     graph.ensure_symmetry();
     graph
 }
 
+// Create hypercube graph of random weights via multithreading
 fn hypercube(n: usize) -> Graph {
-    let num_threads = num_cpus::get();
-    let mut g = Graph::new(n);
+    let g = Graph::new(n);
     
-    let mut handles = vec![];
     let graph = Arc::new(Mutex::new(g));
     
-    for thread_id in 0..num_threads {
+    (0..n).into_par_iter().for_each(|u| {
+        let mut local_edges = Vec::new();
+        let mut rng = fastrand::Rng::new();
+
         let graph_clone = Arc::clone(&graph);
-        let n_copy = n;
-        
-        let handle = thread::spawn(move || {
-            let mut local_edges = Vec::new();
-            let mut rng = fastrand::Rng::new();
-            
-            // Each thread processes a range of vertices
-            let chunk_size = (n_copy - 1) / num_threads + 1;
-            let start_u = thread_id * chunk_size;
-            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
-            
-            for u in start_u..end_u {
-                for v in u+1..n_copy {
-                    let diff = v - u;
-                    if diff & diff - 1 == 0 {
-                        local_edges.push((u, v, rng.f64()));
-                    }
-                }
+
+        for v in u+1..n {
+            let diff = v-u;
+            if diff & diff - 1 == 0 {
+                local_edges.push((u, v, rng.f64()));
             }
-            
-            let mut g = graph_clone.lock().unwrap();
-            g.add_edges_batch_one_way(local_edges);
-        });
-        
-        handles.push(handle);
-    }
-    
-    // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
+        }
+
+        let mut g = graph_clone.lock().unwrap();
+        g.add_edges_batch_one_way(local_edges);
+    });
     
     let mut graph = Arc::try_unwrap(graph).unwrap().into_inner().unwrap();
     graph.ensure_symmetry();
@@ -299,7 +247,7 @@ fn complete_unit_square(n: usize) -> Graph {
         |_| (rng.f64(), rng.f64())
     ).collect();
     
-    let mut g = Graph::new(n);
+    let g = Graph::new(n);
     let locs_arc = Arc::new(locs);
     let mut handles = vec![];
     let graph = Arc::new(Mutex::new(g));
@@ -321,7 +269,7 @@ fn complete_unit_square(n: usize) -> Graph {
             for u in start_u..end_u {
                 for v in u+1..n_copy {
                     let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
-                             (locs_clone[u].1-locs_clone[v].1).powi(2)).sqrt();
+                            (locs_clone[u].1-locs_clone[v].1).powi(2)).sqrt();
                     if w < dropoutbound_copy {
                         local_edges.push((u, v, w));
                     }
@@ -356,7 +304,7 @@ fn complete_unit_cube(n: usize) -> Graph {
         |_| (rng.f64(), rng.f64(), rng.f64())
     ).collect();
     
-    let mut g = Graph::new(n);
+    let g = Graph::new(n);
     let locs_arc = Arc::new(locs);
     let mut handles = vec![];
     let graph = Arc::new(Mutex::new(g));
@@ -378,8 +326,8 @@ fn complete_unit_cube(n: usize) -> Graph {
             for u in start_u..end_u {
                 for v in u+1..n_copy {
                     let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
-                             (locs_clone[u].1-locs_clone[v].1).powi(2)+
-                             (locs_clone[u].2-locs_clone[v].2).powi(2)).sqrt();
+                            (locs_clone[u].1-locs_clone[v].1).powi(2)+
+                            (locs_clone[u].2-locs_clone[v].2).powi(2)).sqrt();
                     if w < dropoutbound_copy {
                         local_edges.push((u, v, w));
                     }
@@ -415,7 +363,7 @@ fn complete_unit_hypercube(n: usize) -> Graph {
         |_| (rng.f64(), rng.f64(), rng.f64(), rng.f64())
     ).collect();
     
-    let mut g = Graph::new(n);
+    let g = Graph::new(n);
     let locs_arc = Arc::new(locs);
     let mut handles = vec![];
     let graph = Arc::new(Mutex::new(g));
@@ -437,9 +385,9 @@ fn complete_unit_hypercube(n: usize) -> Graph {
             for u in start_u..end_u {
                 for v in u+1..n_copy {
                     let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
-                             (locs_clone[u].1-locs_clone[v].1).powi(2)+
-                             (locs_clone[u].2-locs_clone[v].2).powi(2)+
-                             (locs_clone[u].3-locs_clone[v].3).powi(2)).sqrt();
+                            (locs_clone[u].1-locs_clone[v].1).powi(2)+
+                            (locs_clone[u].2-locs_clone[v].2).powi(2)+
+                            (locs_clone[u].3-locs_clone[v].3).powi(2)).sqrt();
                     if w < dropoutbound_copy {
                         local_edges.push((u, v, w));
                     }
@@ -493,15 +441,10 @@ fn main() {
     let mut avgweight = 0.0;
     let mut generation: time::Duration = Duration::ZERO;
     let mut mst: time::Duration = Duration::ZERO;
-    for i in 0..numtrials {
+    for _ in 0..numtrials {
         let genstart = Instant::now();
         let g = generate_graph(dimension, numpoints);
         generation += genstart.elapsed();
-        
-        // Verify symmetry for first graph only to avoid overhead
-        if i == 0 && !g.is_symmetric() {
-            println!("WARNING: Generated graph is not symmetric!");
-        }
         
         let mststart = Instant::now();
         avgweight += mst_prim(&g);
