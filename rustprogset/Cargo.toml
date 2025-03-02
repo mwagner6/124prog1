@@ -5,6 +5,8 @@ edition = "2021"
 
 [dependencies]
 fastrand = "2.3.0"
+frand = "0.10.1"
+num_cpus = "1.16.0"
 rand = "0.9.0"
 rayon = "1.10.0"
 

@@ -1,4 +1,4 @@
-use core::{f64, time};
+use core::{f32, time};
 use std::{env, time::Duration};
 use std::time::Instant;
 use fastrand;
@@ -6,10 +6,11 @@ use std::thread;
 use std::sync::{Arc, Mutex};
 use num_cpus;
 use rayon::prelude::*;
+use frand::Rand;
 
 // DHeap struct
 struct DHeap {
-    heap: Vec<(f64, usize)>,
+    heap: Vec<(f32, usize)>,
     d: usize,
 }
 
@@ -62,13 +63,13 @@ impl DHeap {
     }
 
     // Insert item into and verify parents
-    fn push(&mut self, item: (f64, usize)) {
+    fn push(&mut self, item: (f32, usize)) {
         self.heap.push(item);
         self.verify_up(self.heap.len()-1);
     }
 
     // Remove smallest item from heap and verify its children
-    fn pop(&mut self) -> (f64, usize){
+    fn pop(&mut self) -> (f32, usize){
         if self.heap.len() < 1 {
             panic!("Tried to pop from empty heap");
         }
@@ -88,7 +89,7 @@ impl DHeap {
 #[derive(Debug)]
 struct Graph {
     n: usize,
-    adj: Vec<Vec<(usize, f64)>> 
+    adj: Vec<Vec<(usize, f32)>> 
 }
 
 
@@ -100,12 +101,12 @@ impl Graph {
     }
 
     // Add one-directional edges (To be verified and copied over later)
-    fn add_edge_one_way(&mut self, u: usize, v: usize, weight: f64) {
+    fn add_edge_one_way(&mut self, u: usize, v: usize, weight: f32) {
         self.adj[u].push((v, weight));
     }
 
     // Function to add many edges
-    fn add_edges_batch_one_way(&mut self, edges: Vec<(usize, usize, f64)>) {
+    fn add_edges_batch_one_way(&mut self, edges: Vec<(usize, usize, f32)>) {
         for (u, v, weight) in edges {
             self.add_edge_one_way(u, v, weight);
         }
@@ -136,17 +137,17 @@ impl Graph {
     }
 
     // Function to return neighbors of a node
-    fn neighbors(&self, u: usize) -> Vec<(usize, f64)>{
+    fn neighbors(&self, u: usize) -> Vec<(usize, f32)>{
         self.adj[u].clone()
     }
 }
 
 // Prim's algorithm implementation
-fn mst_prim(g: &Graph) -> f64 {
+fn mst_prim(g: &Graph) -> f32 {
     // Initialize lists for distances and visited nodes
     let n = g.n;
     let mut visited = vec![false; n];
-    let mut dists = vec![f64::INFINITY; n];
+    let mut dists = vec![f32::INFINITY; n];
 
     let s = 0;
     dists[s] = 0.0;
@@ -177,20 +178,20 @@ fn mst_prim(g: &Graph) -> f64 {
 
 // Generate complete basic graph of random weights with multithreading
 fn complete_basic(n: usize) -> Graph {
-    let threshold = 17.68 / n as f64;
+    let threshold = 17.68 / n as f32;
     let g = Graph::new(n);
     let graph = Arc::new(Mutex::new(g));
 
     // Use parallel iterators to allocate work for each thread
     (0..n).into_par_iter().for_each(|u| {
         let mut local_edges = Vec::new();
-        let mut rng = fastrand::Rng::new();
+        let mut rng = Rand::new();
 
         let graph_clone = Arc::clone(&graph);
 
         // Generate upper triangular edges, then later we will copy edges over
         for v in u + 1..n {
-            let w = rng.f64();
+            let w = rng.gen::<f32>();
             if w < threshold {
                 local_edges.push((u, v, w));
             }
@@ -215,14 +216,14 @@ fn hypercube(n: usize) -> Graph {
     
     (0..n).into_par_iter().for_each(|u| {
         let mut local_edges = Vec::new();
-        let mut rng = fastrand::Rng::new();
+        let mut rng = Rand::new();
 
         let graph_clone = Arc::clone(&graph);
 
         for v in u+1..n {
             let diff = v-u;
             if diff & diff - 1 == 0 {
-                local_edges.push((u, v, rng.f64()));
+                local_edges.push((u, v, rng.gen::<f32>()));
             }
         }
 
@@ -238,55 +239,34 @@ fn hypercube(n: usize) -> Graph {
 // Fitted to 5.82*(n^-0.6)
 // We can bound at 5.82*1.2 * (n^-0.6)
 fn complete_unit_square(n: usize) -> Graph {
-    let num_threads = num_cpus::get();
-    let dropoutbound: f64 = 6.98 * (n as f64).powf(-0.6);
+    let dropoutbound: f32 = 6.98 * (n as f32).powf(-0.6);
     
     // Generate locations first
-    let mut rng = fastrand::Rng::new();
-    let locs: Vec<(f64, f64)> = (0..n).map(
-        |_| (rng.f64(), rng.f64())
+    let mut rng = Rand::new();
+    let locs: Vec<(f32, f32)> = (0..n).map(
+        |_| (rng.gen::<f32>(), rng.gen::<f32>())
     ).collect();
     
     let g = Graph::new(n);
     let locs_arc = Arc::new(locs);
-    let mut handles = vec![];
     let graph = Arc::new(Mutex::new(g));
     
-    for thread_id in 0..num_threads {
+    (0..n).into_par_iter().for_each(|u| {
+        let mut local_edges = Vec::new();
         let graph_clone = Arc::clone(&graph);
-        let locs_clone = Arc::clone(&locs_arc);
-        let n_copy = n;
         let dropoutbound_copy = dropoutbound;
-        
-        let handle = thread::spawn(move || {
-            let mut local_edges = Vec::new();
-            
-            // Each thread processes a range of vertices
-            let chunk_size = (n_copy - 1) / num_threads + 1;
-            let start_u = thread_id * chunk_size;
-            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
-            
-            for u in start_u..end_u {
-                for v in u+1..n_copy {
-                    let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
-                            (locs_clone[u].1-locs_clone[v].1).powi(2)).sqrt();
-                    if w < dropoutbound_copy {
-                        local_edges.push((u, v, w));
-                    }
-                }
+        let locs_clone = Arc::clone(&locs_arc);
+
+        for v in u+1..n {
+            let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+(locs_clone[u].1-locs_clone[v].1).powi(2)).sqrt();
+            if w < dropoutbound_copy {
+                local_edges.push((u, v, w));
             }
-            
-            let mut g = graph_clone.lock().unwrap();
-            g.add_edges_batch_one_way(local_edges);
-        });
-        
-        handles.push(handle);
-    }
-    
-    // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
+        }
+
+        let mut g = graph_clone.lock().unwrap();
+        g.add_edges_batch_one_way(local_edges);
+    });
     
     let mut graph = Arc::try_unwrap(graph).unwrap().into_inner().unwrap();
     graph.ensure_symmetry();
@@ -295,56 +275,34 @@ fn complete_unit_square(n: usize) -> Graph {
 // Fitted to 3.71 * (n^-0.42)
 // We can bound to 1.2*3.71 * (n^-0.42)
 fn complete_unit_cube(n: usize) -> Graph {
-    let num_threads = num_cpus::get();
-    let dropoutbound: f64 = 4.45 * (n as f64).powf(-0.42);
+    let dropoutbound: f32 = 4.45 * (n as f32).powf(-0.42);
     
     // Generate locations first
-    let mut rng = fastrand::Rng::new();
-    let locs: Vec<(f64, f64, f64)> = (0..n).map(
-        |_| (rng.f64(), rng.f64(), rng.f64())
+    let mut rng = Rand::new();
+    let locs: Vec<(f32, f32, f32)> = (0..n).map(
+        |_| (rng.gen::<f32>(), rng.gen::<f32>(), rng.gen::<f32>())
     ).collect();
     
     let g = Graph::new(n);
     let locs_arc = Arc::new(locs);
-    let mut handles = vec![];
     let graph = Arc::new(Mutex::new(g));
     
-    for thread_id in 0..num_threads {
+    (0..n).into_par_iter().for_each(|u| {
+        let mut local_edges = Vec::new();
         let graph_clone = Arc::clone(&graph);
-        let locs_clone = Arc::clone(&locs_arc);
-        let n_copy = n;
         let dropoutbound_copy = dropoutbound;
-        
-        let handle = thread::spawn(move || {
-            let mut local_edges = Vec::new();
-            
-            // Each thread processes a range of vertices
-            let chunk_size = (n_copy - 1) / num_threads + 1;
-            let start_u = thread_id * chunk_size;
-            let end_u = std::cmp::min(start_u + chunk_size, n_copy - 1);
-            
-            for u in start_u..end_u {
-                for v in u+1..n_copy {
-                    let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+
-                            (locs_clone[u].1-locs_clone[v].1).powi(2)+
-                            (locs_clone[u].2-locs_clone[v].2).powi(2)).sqrt();
-                    if w < dropoutbound_copy {
-                        local_edges.push((u, v, w));
-                    }
-                }
+        let locs_clone = Arc::clone(&locs_arc);
+
+        for v in u+1..n {
+            let w = ((locs_clone[u].0-locs_clone[v].0).powi(2)+(locs_clone[u].1-locs_clone[v].1).powi(2)+(locs_clone[u].2-locs_clone[v].2).powi(2)).sqrt();
+            if w < dropoutbound_copy {
+                local_edges.push((u, v, w));
             }
-            
-            let mut g = graph_clone.lock().unwrap();
-            g.add_edges_batch_one_way(local_edges);
-        });
-        
-        handles.push(handle);
-    }
-    
-    // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
+        }
+
+        let mut g = graph_clone.lock().unwrap();
+        g.add_edges_batch_one_way(local_edges);
+    });
     
     let mut graph = Arc::try_unwrap(graph).unwrap().into_inner().unwrap();
     graph.ensure_symmetry();
@@ -355,12 +313,12 @@ fn complete_unit_cube(n: usize) -> Graph {
 // We can bound to 1.2*2.5 * (n^-0.28)
 fn complete_unit_hypercube(n: usize) -> Graph {
     let num_threads = num_cpus::get();
-    let dropoutbound: f64 = 3.0 * (n as f64).powf(-0.28);
+    let dropoutbound: f32 = 3.0 * (n as f32).powf(-0.28);
     
     // Generate locations first
-    let mut rng = fastrand::Rng::new();
-    let locs: Vec<(f64, f64, f64, f64)> = (0..n).map(
-        |_| (rng.f64(), rng.f64(), rng.f64(), rng.f64())
+    let mut rng = Rand::new();
+    let locs: Vec<(f32, f32, f32, f32)> = (0..n).map(
+        |_| (rng.gen::<f32>(), rng.gen::<f32>(), rng.gen::<f32>(), rng.gen::<f32>())
     ).collect();
     
     let g = Graph::new(n);
@@ -450,7 +408,7 @@ fn main() {
         avgweight += mst_prim(&g);
         mst += mststart.elapsed();
     }
-    avgweight = avgweight / numtrials as f64;
+    avgweight = avgweight / numtrials as f32;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
     println!("Generation time: {generation:.2?}. MST time: {mst:.2?}");
 }
