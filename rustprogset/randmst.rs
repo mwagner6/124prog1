@@ -3,6 +3,7 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use rayon::prelude::*;
 use frand::Rand;
+use std::time::{Duration, Instant};
 
 // DHeap struct
 struct DHeap {
@@ -367,15 +368,21 @@ fn generate_graph(dim: u32, n: u32) -> Graph {
 
 fn main() {
     let args: Vec<String> = env::args().collect();
+    let runtime: u32 = args[1].parse::<u32>().unwrap();
     let numpoints: u32 = args[2].parse::<u32>().unwrap();
     let numtrials: u32 = args[3].parse::<u32>().unwrap();
     let dimension: u32 = args[4].parse::<u32>().unwrap();
 
     let mut avgweight = 0.0;
     let mut successes = 0;
+    let mut gentime = Duration::ZERO;
+    let mut msttime = Duration::ZERO;
     for _ in 0..numtrials {
+        let genstart = Instant::now();
         let g = generate_graph(dimension, numpoints);
         // Check for the rare case that we overpruned. If this is the case, don't increment the amount we divide by to get our average.
+        gentime += genstart.elapsed();
+        let mststart = Instant::now();
         match mst_prim(&g) {
             Some(w) => {
                 avgweight += w;
@@ -383,7 +390,12 @@ fn main() {
             },
             None => {}
         }
+        msttime += mststart.elapsed();
     }
     avgweight = avgweight / successes as f32;
     println!("{avgweight} {numpoints} {numtrials} {dimension}");
+    match runtime {
+        0 => {},
+        _ => {println!("Graph generation time: {:.2?}, MST time: {:.2?}", gentime, msttime)}
+    }
 }
